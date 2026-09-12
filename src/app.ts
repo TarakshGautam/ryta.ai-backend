@@ -11,10 +11,9 @@ const app = express();
 
 app.set("trust proxy", 1);
 app.use(helmet());
-app.use(corsMiddleware);
 
-// Dynamic CORS preflight handler (Express 5 safe)
-app.options("(.*)", corsMiddleware);
+// Apply CORS globally to all routes & preflight OPTIONS requests cleanly
+app.use(corsMiddleware);
 
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
@@ -42,7 +41,7 @@ app.get("/", (_req: Request, res: Response) => {
     });
 });
 
-// Rate Limiting & Subdomain Parsing
+// Rate Limiting
 const globalLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 100,
@@ -56,6 +55,7 @@ const globalLimiter = rateLimit({
 
 app.use("/api", globalLimiter);
 
+// Subdomain Parser
 app.use((req: Request, _res: Response, next: NextFunction) => {
     const rawHost = (req.headers["x-forwarded-host"] as string) || req.headers.host || "";
     const host = rawHost.split(":")[0];
@@ -72,12 +72,12 @@ app.use((req: Request, _res: Response, next: NextFunction) => {
 // Routes
 app.use("/api", routes);
 
-// 404 Handler (Path string hatakar direct function use karo)
+// 404 Catch-All (No path string required)
 app.use((_req: Request, _res: Response, next: NextFunction) => {
     next(new ApiError(404, "API endpoint not found."));
 });
 
-// Error Handler
+// Central Error Handler
 app.use(errorHandler);
 
 export default app;
