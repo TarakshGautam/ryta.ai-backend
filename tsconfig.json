@@ -1,16 +1,13 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
+    "module": "CommonJS",
+    "moduleResolution": "node",
     "esModuleInterop": true,
-    "strict": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "resolveJsonModule": true,
-    "outDir": "./dist",
-    "rootDir": "./src",
-    "typeRoots": ["./node_modules/@types", "./src/types"]
+    "rootDir": "./",
+    "outDir": "./dist"
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*", "api/**/*"]
 }

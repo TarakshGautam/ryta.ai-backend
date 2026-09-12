@@ -15,7 +15,6 @@ export const ENV = {
     OPENROUTER_MODEL:
         process.env.OPENROUTER_MODEL || "meta-llama/llama-3.3-70b-instruct:free",
     CLERK_SECRET_KEY: process.env.CLERK_SECRET_KEY || "",
-    HF_TOKEN: process.env.HF_TOKEN || "",
     FRONTEND_URL: process.env.FRONTEND_URL || "http://localhost:5173",
     APP_BASE_URL:
         process.env.APP_BASE_URL ||
