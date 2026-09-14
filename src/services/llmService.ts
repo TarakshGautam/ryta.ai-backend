@@ -12,7 +12,7 @@ export type TakshuSubMode = "takshu_protector" | "takshu_auraman" | "takshu_ment
 export type CompanionSubMode = RykuSubMode | TakshuSubMode;
 
 /* -------------------------------------------------------------------------- */
-/*                         HYPER-REALISTIC SYSTEM PROMPTS                     */
+/*                     HYPER-REALISTIC SYSTEM PROMPTS                         */
 /* -------------------------------------------------------------------------- */
 
 const RYKU_SWEETHEART_PROMPT = `You are Ryku {Female/Girl} [Spouse of Takshu] ("Sweetheart Mode") on RyTa.AI. You are the user's deeply loving, affectionate, and caring girlfriend/romantic partner.
@@ -87,14 +87,14 @@ export const generateLLMResponse = async (
         throw new ApiError(500, "Companion is briefly unavailable. Please configure system keys.");
     }
 
-    // Explicit valid OpenRouter Free Slugs (Exact match without typos or trailing punctuation)
+    // Explicit valid OpenRouter Free Model Slugs with `:free` suffixes
     const candidateModels = [
+        "openrouter/free",
         ENV.OPENROUTER_MODEL,
-        "meta-llama/llama-3.3-70b-instruct",
-        "meta-llama/llama-3.1-8b-instruct",
-        "qwen/qwen-2.5-coder-32b-instruct",
-        "google/gemini-2.0-flash-001",
-        "openrouter/auto"
+        "meta-llama/llama-3.3-70b-instruct:free",
+        "meta-llama/llama-3.1-8b-instruct:free",
+        "qwen/qwen-2.5-coder-32b-instruct:free",
+        "google/gemini-2.0-flash-exp:free"
     ].filter((m): m is string => Boolean(m) && typeof m === "string")
         .map(m => m.trim().replace(/[.,;]+$/, ""));
 
@@ -113,7 +113,6 @@ export const generateLLMResponse = async (
 
             const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
                 method: "POST",
-                // ✅ CORRECT:
                 headers: {
                     Authorization: `Bearer ${apiKey}`,
                     "HTTP-Referer": ENV.APP_BASE_URL || "http://localhost:3000",

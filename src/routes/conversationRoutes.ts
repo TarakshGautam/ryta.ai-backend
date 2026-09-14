@@ -1,19 +1,20 @@
 import { Router } from "express";
 import { ConversationController } from "../controllers/conversationController";
-import { optionalAuth } from "../middleware/auth";
+import { requireIdentity } from "../middleware/auth"; // Clerk / Guest Middleware
 
 const router = Router();
 
-// Get list of conversations for current user/guest
-router.get("/", optionalAuth, ConversationController.getConversations);
+// Apply auth middleware to protect all conversation endpoints
+router.use(requireIdentity);
 
-// Get messages for a specific conversation ID
-router.get("/:id/messages", optionalAuth, ConversationController.getConversationMessages);
-router.patch("/:id", optionalAuth, ConversationController.renameConversation);
-router.delete("/:id", optionalAuth, ConversationController.deleteConversation);
-router.patch("/:id/pin", optionalAuth, ConversationController.setConversationPinned);
-router.patch("/:id/archive", optionalAuth, ConversationController.setConversationArchived);
-router.patch("/:id/messages/:messageId", optionalAuth, ConversationController.updateMessage);
-router.delete("/:id/messages/:messageId", optionalAuth, ConversationController.deleteMessage);
+router.get("/", ConversationController.getConversations);
+router.get("/:id/messages", ConversationController.getConversationMessages);
+router.patch("/:id/rename", ConversationController.renameConversation);
+router.delete("/:id", ConversationController.deleteConversation);
+router.patch("/:id/pin", ConversationController.setConversationPinned);
+router.patch("/:id/archive", ConversationController.setConversationArchived);
+
+router.patch("/:id/messages/:messageId", ConversationController.updateMessage);
+router.delete("/:id/messages/:messageId", ConversationController.deleteMessage);
 
 export default router;

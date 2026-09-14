@@ -6,6 +6,7 @@ import routes from "./routes";
 import { errorHandler } from "./middleware/errorHandler";
 import { ApiError } from "./utils/apiError";
 import { corsMiddleware } from "./config/cors";
+import guestRoutes from "./routes/guestRoutes";
 
 const app = express();
 
@@ -71,6 +72,7 @@ app.use((req: Request, _res: Response, next: NextFunction) => {
 
 // Routes
 app.use("/api", routes);
+app.use("/api/v1/guest", guestRoutes);
 
 // 404 Catch-All (No path string required)
 app.use((_req: Request, _res: Response, next: NextFunction) => {
