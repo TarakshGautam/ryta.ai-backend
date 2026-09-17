@@ -202,6 +202,25 @@ export const initializeDatabase = async () => {
       "write"
     );
 
+    // Migration: safely add updated_at to diary_entries if the column is missing.
+    // Runs AFTER batch, so the table definitely exists.
+    // Idempotent — safe to run on every cold start.
+    try {
+      await db.execute(
+        `ALTER TABLE diary_entries ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP;`
+      );
+      logger.info("Migration applied: diary_entries.updated_at added.");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.toLowerCase().includes("duplicate column")) {
+        logger.info(
+          "Migration skipped: diary_entries.updated_at already exists."
+        );
+      } else {
+        logger.warn(`Migration note: ${msg}`);
+      }
+    }
+
     logger.info("Database initialized successfully via batch execution.");
   } catch (error) {
     logger.error("Failed to initialize database:", error);
