@@ -32,6 +32,54 @@ async function requireOwnedConversation(req: Request, id: string): Promise<void>
     }
 }
 
+export const createConversation = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+): Promise<void> => {
+    try {
+        const userId = req.user?.id ? String(req.user.id) : null;
+        const guestSessionId = req.guestSessionId
+            ? String(req.guestSessionId)
+            : null;
+
+        if (!userId && !guestSessionId) {
+            throw new ApiError(401, "Authentication or guest session required.");
+        }
+
+        const rawTitle =
+            typeof req.body?.title === "string" ? req.body.title.trim() : "";
+        const title = (rawTitle || "New Conversation").slice(0, 120);
+
+        const id = crypto.randomUUID();
+        const mode =
+            typeof req.body?.mode === "string" && req.body.mode.trim()
+                ? req.body.mode.trim().slice(0, 32)
+                : "ryku";
+
+        await db.execute({
+            sql: `INSERT INTO conversations (id, user_id, guest_session_id, title, mode, created_at, updated_at)
+                  VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+            args: [id, userId, guestSessionId, title, mode],
+        });
+
+        res.status(201).json({
+            success: true,
+            data: {
+                id,
+                title,
+                mode,
+                is_pinned: 0,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+            },
+            message: "Conversation created.",
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
 export const getConversations = async (
     req: Request,
     res: Response,
@@ -234,6 +282,7 @@ export const deleteMessage = async (
 };
 
 export const ConversationController = {
+    createConversation,     
     getConversations,
     getConversationMessages,
     renameConversation,

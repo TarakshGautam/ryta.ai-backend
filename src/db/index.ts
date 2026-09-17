@@ -9,10 +9,8 @@ export const db = createClient({
 
 export const initializeDatabase = async () => {
   try {
-    // Enable foreign keys before running batch migrations
     await db.execute("PRAGMA foreign_keys = ON;");
 
-    // Single batch transaction execution to prevent Vercel Serverless Timeouts
     await db.batch(
       [
         `CREATE TABLE IF NOT EXISTS users (
@@ -61,8 +59,21 @@ export const initializeDatabase = async () => {
           content TEXT NOT NULL,
           mood TEXT,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
           FOREIGN KEY (guest_session_id) REFERENCES guest_sessions(id) ON DELETE CASCADE
+        );`,
+
+        `CREATE TABLE IF NOT EXISTS vault_entries (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          content TEXT NOT NULL,
+          source TEXT DEFAULT 'manual',
+          conversation_id TEXT,
+          message_id TEXT,
+          persona TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         );`,
 
         `CREATE TABLE IF NOT EXISTS memory_vault (
@@ -168,13 +179,16 @@ export const initializeDatabase = async () => {
           FOREIGN KEY (music_track_id) REFERENCES music_tracks(id) ON DELETE CASCADE
         );`,
 
-        // Security & Performance Indexes
+        // Indexes
         `CREATE INDEX IF NOT EXISTS idx_conversations_user ON conversations(user_id);`,
         `CREATE INDEX IF NOT EXISTS idx_conversations_guest ON conversations(guest_session_id);`,
         `CREATE INDEX IF NOT EXISTS idx_conversations_mode ON conversations(mode);`,
         `CREATE INDEX IF NOT EXISTS idx_messages_conv_created ON messages(conversation_id, created_at DESC);`,
         `CREATE INDEX IF NOT EXISTS idx_diary_user ON diary_entries(user_id);`,
         `CREATE INDEX IF NOT EXISTS idx_diary_guest ON diary_entries(guest_session_id);`,
+        `CREATE INDEX IF NOT EXISTS idx_diary_user_created ON diary_entries(user_id, created_at DESC);`,
+        `CREATE INDEX IF NOT EXISTS idx_vault_user ON vault_entries(user_id);`,
+        `CREATE INDEX IF NOT EXISTS idx_vault_created ON vault_entries(user_id, created_at DESC);`,
         `CREATE INDEX IF NOT EXISTS idx_memory_user ON memory_vault(user_id);`,
         `CREATE INDEX IF NOT EXISTS idx_memory_guest ON memory_vault(guest_session_id);`,
         `CREATE INDEX IF NOT EXISTS idx_experiences_slug ON relationship_experiences(slug);`,
@@ -188,7 +202,7 @@ export const initializeDatabase = async () => {
       "write"
     );
 
-    logger.info("Database initialized successfully via batch execution with enhanced FK constraint security.");
+    logger.info("Database initialized successfully via batch execution.");
   } catch (error) {
     logger.error("Failed to initialize database:", error);
     throw error;

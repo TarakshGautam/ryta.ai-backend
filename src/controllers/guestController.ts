@@ -1,13 +1,16 @@
 import { Request, Response } from "express";
-import { db } from "../db";
 import { logger } from "../utils/logger";
 import { parseGuestSessionId } from "../utils/guestIdentity";
 import { generateLLMResponse, ChatMessage } from "../services/llmService";
 import { RYKU_SYSTEM_PROMPT } from "../routes/rykuPersona";
-
+import { db } from "../db";
 /**
  * Guest Chat Endpoint Handler
  * Path: POST /api/v1/guest/chat
+ *
+ * Guest chat is fully ephemeral — nothing is persisted to DB.
+ * Session lives only in client-side memory (localStorage guestId + React state).
+ * This keeps guest mode fast, private, and free of FK/schema issues.
  */
 export const handleGuestChat = async (req: Request, res: Response) => {
     try {
@@ -21,36 +24,36 @@ export const handleGuestChat = async (req: Request, res: Response) => {
         }
 
         const bodyGuestId = (req.body as { guestId?: unknown })?.guestId;
-        const guestId = parseGuestSessionId(bodyGuestId) || req.guestSessionId || "guest_incognito";
+        const guestId =
+            parseGuestSessionId(bodyGuestId) ||
+            req.guestSessionId ||
+            "guest_incognito";
 
-        // Prepend custom RYKU_SYSTEM_PROMPT and format conversation history for OpenRouter
+        // Prepend custom RYKU_SYSTEM_PROMPT and format conversation history
         const formattedMessages: ChatMessage[] = [
             { role: "system", content: RYKU_SYSTEM_PROMPT },
             ...(Array.isArray(history)
                 ? history.map((msg: { sender: string; text: string }) => ({
-                    role: (msg.sender === "user" ? "user" : "assistant") as "user" | "assistant",
-                    content: String(msg.text || "").replace(/^\[MOOD:[A-Z]+\]\s*/, ""),
+                    role: (msg.sender === "user"
+                        ? "user"
+                        : "assistant") as "user" | "assistant",
+                    content: String(msg.text || "").replace(
+                        /^\[MOOD:[A-Z]+\]\s*/,
+                        ""
+                    ),
                 }))
                 : []),
             { role: "user", content: message },
         ];
 
-        // Clean function call matching ChatMessage[] signature without type errors
         const reply = await generateLLMResponse(formattedMessages);
 
-        // Safe DB execution (If DB fails/timeouts, user still receives their reply)
-        // Safe DB execution (If DB fails/timeouts, user still receives their reply)
-        try {
-            if (db) {
-                await db.execute({
-                    sql: `INSERT INTO conversations (id, guest_session_id, user_message, ai_response) VALUES (?, ?, ?, ?)`,
-                    args: [crypto.randomUUID(), guestId, message, reply],
-                });
-            }
-        } catch (dbErr: unknown) {
-            const errMessage = dbErr instanceof Error ? dbErr.message : String(dbErr);
-            logger.warn(`Guest conversation DB logging skipped: ${errMessage}`);
-        }
+        // NO DB WRITES — guest session is ephemeral by design.
+        // When a guest signs up later, we'll handle persistence via
+        // an explicit "import this conversation" flow (future work).
+        logger.debug(
+            `Guest chat handled for session ${guestId} (ephemeral, not persisted)`
+        );
 
         return res.status(200).json({
             success: true,
@@ -69,6 +72,10 @@ export const handleGuestChat = async (req: Request, res: Response) => {
 /**
  * Merge Guest Session into Authenticated User
  * Path: POST /api/v1/guest/merge
+ *
+ * NOTE: Since guest chat is no longer persisted, there is nothing to
+ * merge from `conversations`. This handler is kept for future use
+ * (e.g. when we add guest-side diary or vault, or import-from-client).
  */
 export const mergeGuestIntoUser = async (req: Request, res: Response) => {
     try {
@@ -90,62 +97,42 @@ export const mergeGuestIntoUser = async (req: Request, res: Response) => {
             });
         }
 
-        // Atomic SQL Batch Execution for Memory Integration
+        // Only merge records that were actually persisted under this guest id.
+        // Since guest chat is ephemeral, this mainly covers future diary/vault
+        // entries created while unauthenticated (if we enable that later).
         const statements = [
             {
-                sql: `UPDATE conversations 
-              SET user_id = ?, guest_session_id = NULL, updated_at = CURRENT_TIMESTAMP 
-              WHERE guest_session_id = ? AND (user_id IS NULL OR user_id = '')`,
+                sql: `UPDATE diary_entries
+                      SET user_id = ?, guest_session_id = NULL
+                      WHERE guest_session_id = ? AND (user_id IS NULL OR user_id = '')`,
                 args: [userId, guestId],
             },
             {
-                sql: `UPDATE diary_entries 
-              SET user_id = ?, guest_session_id = NULL 
-              WHERE guest_session_id = ? AND (user_id IS NULL OR user_id = '')`,
-                args: [userId, guestId],
-            },
-            {
-                sql: `UPDATE memory_vault 
-              SET user_id = ?, guest_session_id = NULL 
-              WHERE guest_session_id = ? AND (user_id IS NULL OR user_id = '')`,
-                args: [userId, guestId],
-            },
-            {
-                sql: `UPDATE shared_activities 
-              SET user_id = ?, guest_session_id = NULL 
-              WHERE guest_session_id = ? AND (user_id IS NULL OR user_id = '')`,
-                args: [userId, guestId],
-            },
-            {
-                sql: `UPDATE relationship_experiences 
-              SET creator_user_id = ?, creator_guest_id = NULL 
-              WHERE creator_guest_id = ? AND (creator_user_id IS NULL OR creator_user_id = '')`,
-                args: [userId, guestId],
-            },
-            {
-                sql: `INSERT INTO guest_sessions (id, merged_into_user_id, merged_at) 
-              VALUES (?, ?, CURRENT_TIMESTAMP)
-              ON CONFLICT(id) DO UPDATE SET 
-                merged_into_user_id = excluded.merged_into_user_id, 
-                merged_at = CURRENT_TIMESTAMP`,
+                sql: `INSERT INTO guest_sessions (id, merged_into_user_id, merged_at)
+                      VALUES (?, ?, CURRENT_TIMESTAMP)
+                      ON CONFLICT(id) DO UPDATE SET
+                        merged_into_user_id = excluded.merged_into_user_id,
+                        merged_at = CURRENT_TIMESTAMP`,
                 args: [guestId, userId],
             },
         ];
 
         await db.batch(statements, "write");
 
-        logger.info(`Guest session ${guestId} successfully merged into user ${userId}`);
+        logger.info(
+            `Guest session ${guestId} linked to user ${userId} (no chat records to merge — ephemeral by design)`
+        );
 
         return res.status(200).json({
             success: true,
             data: { guestId, userId },
-            message: "Guest memories were saved to your account.",
+            message: "Guest session linked to your account.",
         });
     } catch (error) {
         logger.error("Guest merge failed:", error);
         return res.status(500).json({
             success: false,
-            error: "Could not save guest memories to this account. Please try again.",
+            error: "Could not link guest session. Please try again.",
         });
     }
 };

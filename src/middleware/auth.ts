@@ -4,21 +4,11 @@ import { ApiError } from "../utils/apiError";
 import { ENV } from "../config/env";
 import { logger } from "../utils/logger";
 
-export interface AuthenticatedRequest extends Request {
-    user?: {
-        id: string;
-        [key: string]: any;
-    };
-    guestId?: string;
-    guestSessionId?: string;
-    ownerId?: string;
-}
-
 export const optionalAuth = async (
-    req: AuthenticatedRequest,
+    req: Request,
     _res: Response,
     next: NextFunction
-) => {
+): Promise<void> => {
     try {
         const authHeader = req.headers.authorization;
         const guestHeader = req.headers["x-guest-session-id"] as string | undefined;
@@ -34,7 +24,10 @@ export const optionalAuth = async (
                         req.user = { id: claims.sub, ...claims };
                     }
                 } catch (error) {
-                    logger.warn("Invalid JWT payload provided, falling back to guest verification.", error);
+                    logger.warn(
+                        `Invalid JWT payload provided, falling back to guest verification: ${error instanceof Error ? error.message : String(error)
+                        }`
+                    );
                 }
             }
         }
@@ -53,15 +46,20 @@ export const optionalAuth = async (
 };
 
 export const requireIdentity = async (
-    req: AuthenticatedRequest,
+    req: Request,
     _res: Response,
     next: NextFunction
-) => {
-    await optionalAuth(req, _res, (err?: any) => {
+): Promise<void> => {
+    await optionalAuth(req, _res, (err?: unknown) => {
         if (err) return next(err);
 
         if (!req.ownerId) {
-            return next(new ApiError(401, "Authentication token or x-guest-session-id header is required."));
+            return next(
+                new ApiError(
+                    401,
+                    "Authentication token or x-guest-session-id header is required."
+                )
+            );
         }
         next();
     });

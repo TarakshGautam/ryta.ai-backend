@@ -1,8 +1,11 @@
-import { Response, NextFunction } from "express";
-import { AuthenticatedRequest } from "../middleware/auth";
+import { Request, Response, NextFunction } from "express";
 import { db } from "../db";
 import { logger } from "../utils/logger";
-import { generateLLMResponse, type ChatMessage, type CompanionSubMode } from "../services/llmService";
+import {
+    generateLLMResponse,
+    type ChatMessage,
+    type CompanionSubMode,
+} from "../services/llmService";
 import { searchDuckDuckGo } from "../services/webSearchService";
 import { ApiError } from "../utils/apiError";
 import { successResponse } from "../utils/response";
@@ -24,10 +27,10 @@ function needsWebSearch(message: string, explicit?: boolean): boolean {
 }
 
 export const handleChatMessage = async (
-    req: AuthenticatedRequest,
+    req: Request,
     res: Response,
     next: NextFunction
-) => {
+): Promise<void> => {
     try {
         const { message, conversationId, subMode, webSearch } = req.body as {
             message?: unknown;
@@ -42,11 +45,17 @@ export const handleChatMessage = async (
 
         const userMessage = message.trim().slice(0, 8000);
         const userId = req.user?.id ? String(req.user.id) : null;
-        const guestSessionId = req.guestSessionId || (req.headers["x-guest-session-id"] as string) || null;
+        const guestSessionId =
+            req.guestSessionId ||
+            (req.headers["x-guest-session-id"] as string) ||
+            null;
         const ownerId = req.ownerId || userId || guestSessionId;
 
         if (!ownerId) {
-            throw new ApiError(401, "User authentication or Guest Session ID is missing.");
+            throw new ApiError(
+                401,
+                "User authentication or Guest Session ID is missing."
+            );
         }
 
         let activeConversationId =
@@ -64,28 +73,47 @@ export const handleChatMessage = async (
                 activeConversationId = crypto.randomUUID();
                 await db.execute({
                     sql: `INSERT INTO conversations (id, guest_session_id, user_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-                    args: [activeConversationId, guestSessionId, userId, userMessage.slice(0, 48)],
+                    args: [
+                        activeConversationId,
+                        guestSessionId,
+                        userId,
+                        userMessage.slice(0, 48),
+                    ],
                 });
             } else {
                 const convRow = convCheck.rows[0];
-                const convOwnerUser = convRow.user_id ? String(convRow.user_id) : null;
-                const convOwnerGuest = convRow.guest_session_id ? String(convRow.guest_session_id) : null;
+                const convOwnerUser = convRow.user_id
+                    ? String(convRow.user_id)
+                    : null;
+                const convOwnerGuest = convRow.guest_session_id
+                    ? String(convRow.guest_session_id)
+                    : null;
 
-                const isOwner = (userId && convOwnerUser === userId) || (guestSessionId && convOwnerGuest === guestSessionId);
+                const isOwner =
+                    (userId && convOwnerUser === userId) ||
+                    (guestSessionId && convOwnerGuest === guestSessionId);
 
                 if (!isOwner) {
-                    throw new ApiError(403, "Access Denied: You do not own this chat session.");
+                    throw new ApiError(
+                        403,
+                        "Access Denied: You do not own this chat session."
+                    );
                 }
             }
         } else {
             activeConversationId = crypto.randomUUID();
             await db.execute({
                 sql: `INSERT INTO conversations (id, guest_session_id, user_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-                args: [activeConversationId, guestSessionId, userId, userMessage.slice(0, 48)],
+                args: [
+                    activeConversationId,
+                    guestSessionId,
+                    userId,
+                    userMessage.slice(0, 48),
+                ],
             });
         }
 
-        // Fetch User Context Parallelized (History, Diary & Memory Vault)
+        // Fetch context in parallel (history, diary, memory vault)
         const [historyResult, diaryResult, memoryResult] = await Promise.all([
             db.execute({
                 sql: `SELECT sender, content FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT 16`,
@@ -96,8 +124,8 @@ export const handleChatMessage = async (
                 args: [userId, guestSessionId],
             }),
             db.execute({
-                sql: `SELECT key, value FROM memory_vault WHERE user_id = ? OR guest_session_id = ?`,
-                args: [userId, guestSessionId],
+                sql: `SELECT content FROM vault_entries WHERE user_id = ? ORDER BY created_at DESC LIMIT 20`,
+                args: [userId],
             }),
         ]);
 
@@ -105,16 +133,26 @@ export const handleChatMessage = async (
         const llmMessages: ChatMessage[] = [];
         const contextBits: string[] = [];
 
+        // Memory Vault context (new table: vault_entries)
         if (memoryResult.rows.length > 0) {
             contextBits.push(
-                "Known memories about user:\n" +
-                memoryResult.rows.map((m) => `- ${asText(m.key)}: ${asText(m.value)}`).join("\n")
+                "Saved memories about user:\n" +
+                memoryResult.rows
+                    .map((m) => `- ${asText(m.content)}`)
+                    .join("\n")
             );
         }
+
+        // Diary context
         if (diaryResult.rows.length > 0) {
             contextBits.push(
                 "Recent emotional diary notes:\n" +
-                diaryResult.rows.map((d) => `- [Mood: ${asText(d.mood) || "neutral"}] ${asText(d.content)}`).join("\n")
+                diaryResult.rows
+                    .map(
+                        (d) =>
+                            `- [Mood: ${asText(d.mood) || "neutral"}] ${asText(d.content)}`
+                    )
+                    .join("\n")
             );
         }
 
@@ -125,13 +163,21 @@ export const handleChatMessage = async (
             if (sources.length > 0) {
                 contextBits.push(
                     "Live web search context:\n" +
-                    sources.map((s, i) => `${i + 1}. ${s.title}\n${s.url}\n${s.snippet}`).join("\n\n")
+                    sources
+                        .map(
+                            (s, i) =>
+                                `${i + 1}. ${s.title}\n${s.url}\n${s.snippet}`
+                        )
+                        .join("\n\n")
                 );
             }
         }
 
         if (contextBits.length > 0) {
-            llmMessages.push({ role: "system", content: contextBits.join("\n\n") });
+            llmMessages.push({
+                role: "system",
+                content: contextBits.join("\n\n"),
+            });
         }
 
         for (const row of pastMessages) {
@@ -147,22 +193,37 @@ export const handleChatMessage = async (
         llmMessages.push({ role: "user", content: userMessage });
 
         const activeSubMode: CompanionSubMode = subMode || "ryku_sweetheart";
-        const aiResponseText = await generateLLMResponse(llmMessages, activeSubMode);
+        const aiResponseText = await generateLLMResponse(
+            llmMessages,
+            activeSubMode
+        );
 
         const timestamp = new Date().toISOString();
         const userMessageId = crypto.randomUUID();
         const assistantMessageId = crypto.randomUUID();
 
-        // Transactional Batch Write for Integrity
+        // Transactional batch write
         await db.batch(
             [
                 {
                     sql: `INSERT INTO messages (id, conversation_id, sender, content, created_at) VALUES (?, ?, ?, ?, ?)`,
-                    args: [userMessageId, activeConversationId, "user", userMessage, timestamp],
+                    args: [
+                        userMessageId,
+                        activeConversationId,
+                        "user",
+                        userMessage,
+                        timestamp,
+                    ],
                 },
                 {
                     sql: `INSERT INTO messages (id, conversation_id, sender, content, created_at) VALUES (?, ?, ?, ?, ?)`,
-                    args: [assistantMessageId, activeConversationId, "assistant", aiResponseText, timestamp],
+                    args: [
+                        assistantMessageId,
+                        activeConversationId,
+                        "assistant",
+                        aiResponseText,
+                        timestamp,
+                    ],
                 },
                 {
                     sql: `UPDATE conversations SET updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
@@ -172,7 +233,7 @@ export const handleChatMessage = async (
             "write"
         );
 
-        return successResponse(res, 200, "Message processed successfully.", {
+         successResponse(res, 200, "Message processed successfully.", {
             conversationId: activeConversationId,
             message: aiResponseText,
             userMessageId,
@@ -187,14 +248,17 @@ export const handleChatMessage = async (
 };
 
 export const getChatHistory = async (
-    req: AuthenticatedRequest,
+    req: Request,
     res: Response,
     next: NextFunction
-) => {
+): Promise<void> => {
     try {
         const { conversationId } = req.params;
         const userId = req.user?.id ? String(req.user.id) : null;
-        const guestSessionId = req.guestSessionId || (req.headers["x-guest-session-id"] as string) || null;
+        const guestSessionId =
+            req.guestSessionId ||
+            (req.headers["x-guest-session-id"] as string) ||
+            null;
 
         if (!conversationId) {
             throw new ApiError(400, "Conversation ID is required.");
@@ -206,28 +270,36 @@ export const getChatHistory = async (
 
         const convCheck = await db.execute({
             sql: "SELECT guest_session_id, user_id FROM conversations WHERE id = ?",
-            args: [conversationId],
-        }as any);
+            args: [String(conversationId)],
+        });
 
         if (convCheck.rows.length === 0) {
             throw new ApiError(404, "Conversation thread not found.");
         }
 
         const convRow = convCheck.rows[0];
-        const convOwnerUser = convRow.user_id ? String(convRow.user_id) : null;
-        const convOwnerGuest = convRow.guest_session_id ? String(convRow.guest_session_id) : null;
+        const convOwnerUser = convRow.user_id
+            ? String(convRow.user_id)
+            : null;
+        const convOwnerGuest = convRow.guest_session_id
+            ? String(convRow.guest_session_id)
+            : null;
 
-        const isOwner = (userId && convOwnerUser === userId) || (guestSessionId && convOwnerGuest === guestSessionId);
+        const isOwner =
+            (userId && convOwnerUser === userId) ||
+            (guestSessionId && convOwnerGuest === guestSessionId);
 
         if (!isOwner) {
-            throw new ApiError(403, "Access Denied: You cannot view this conversation history.");
+            throw new ApiError(
+                403,
+                "Access Denied: You cannot view this conversation history."
+            );
         }
 
         const messagesResult = await db.execute({
             sql: "SELECT id, sender, content, created_at FROM messages WHERE conversation_id = ? ORDER BY created_at ASC",
-            args: [conversationId],
-        }as any);
-
+            args: [String(conversationId)],
+        });
         const formattedMessages = messagesResult.rows.map((row) => ({
             id: asText(row.id),
             sender: asText(row.sender) === "user" ? "user" : "assistant",
@@ -235,7 +307,7 @@ export const getChatHistory = async (
             createdAt: asText(row.created_at),
         }));
 
-        return successResponse(res, 200, "Chat history retrieved.", {
+         successResponse(res, 200, "Chat history retrieved.", {
             messages: formattedMessages,
         });
     } catch (error) {
