@@ -89,10 +89,11 @@ export const generateLLMResponse = async (
 
     // Explicit valid OpenRouter Free Model Slugs with `:free` suffixes
     const candidateModels = [
-        "google/gemini-2.0-flash-exp:free",        // ← Primary: Hinglish king
-        "meta-llama/llama-3.1-8b-instruct:free",   // ← Fallback 1
-        "meta-llama/llama-3.3-70b-instruct:free",  // ← Fallback 2
-        "nvidia/nemotron-3-nano-30b-a3b:free"      // ← Fallback 3 (fastest)
+        "google/gemma-4-26b-a4b-it:free",           // ← Primary: Hinglish king
+        "inclusionai/ling-3.0-flash-sante:free",    // ← Fast fallback
+        "deepseek/deepseek-v4-flash-0731:free",     // ← DeepSeek fallback
+        "z-ai/glm-5.2:free",                        // ← GLM roleplay
+        "google/gemma-4-31b-it:free"                // ← Bigger Gemma fallback
     ].filter((m): m is string => Boolean(m) && typeof m === "string")
         .map(m => m.trim().replace(/[.,;]+$/, ""));
 
