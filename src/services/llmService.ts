@@ -89,12 +89,10 @@ export const generateLLMResponse = async (
 
     // Explicit valid OpenRouter Free Model Slugs with `:free` suffixes
     const candidateModels = [
-        "openrouter/free",
-        ENV.OPENROUTER_MODEL,
-        "meta-llama/llama-3.3-70b-instruct:free",
-        "meta-llama/llama-3.1-8b-instruct:free",
-        "qwen/qwen-2.5-coder-32b-instruct:free",
-        "google/gemini-2.0-flash-exp:free"
+        "google/gemini-2.0-flash-exp:free",        // ← Primary: Hinglish king
+        "meta-llama/llama-3.1-8b-instruct:free",   // ← Fallback 1
+        "meta-llama/llama-3.3-70b-instruct:free",  // ← Fallback 2
+        "nvidia/nemotron-3-nano-30b-a3b:free"      // ← Fallback 3 (fastest)
     ].filter((m): m is string => Boolean(m) && typeof m === "string")
         .map(m => m.trim().replace(/[.,;]+$/, ""));
 
