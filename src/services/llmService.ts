@@ -88,12 +88,12 @@ export const generateLLMResponse = async (
     }
 
     // Explicit valid OpenRouter Free Model Slugs with `:free` suffixes
-const candidateModels = [
-    "google/gemma-4-26b-a4b-it:free",     // Primary — Hinglish tested
-    "google/gemma-4-31b-it:free",          // Fallback — same family
-    "z-ai/glm-5.2:free",                   // Fallback — roleplay
-    "deepseek/deepseek-v4-flash-0731:free" // Final fallback
-];
+    const candidateModels = [
+        "google/gemma-4-26b-a4b-it:free",     // Primary — Hinglish tested
+        "google/gemma-4-31b-it:free",          // Fallback — same family
+        "z-ai/glm-5.2:free",                   // Fallback — roleplay
+        "deepseek/deepseek-v4-flash-0731:free" // Final fallback
+    ];
 
     const systemPrompt = getSystemPromptBySubMode(subMode);
 
